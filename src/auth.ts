@@ -18,41 +18,65 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         },
       },
 
-      async authorize(credentials, request) {
+      async authorize(credentials) {
+        await connectDb();
 
-          await connectDb();
+        const email = credentials.email;
+        const password = credentials.password as string;
 
-          const email = credentials.email;
-          const password = credentials.password as string;
+        const user = await User.findOne({ email });
 
-          const user = await User.findOne({ email });
+        if (!user) {
+          throw new Error("user does not exist");
+        }
 
-          if (!user) {
-            throw new Error("user does not exist");
-          }
+        const isMatch = await bcrypt.compare(password, user.password);
 
-          const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+          throw new Error("incorrect password");
+        }
 
-          if (!isMatch) {
-            throw new Error("incorrect password");
-          }
-
-          return {
-            id: user._id,
-            email: user.email,
-            name: user.name,
-          };
-
+        return {
+          id: user._id.toString(),
+          email: user.email,
+          name: user.name,
+        };
       },
     }),
   ],
 
+  callbacks: {
+    // User data is available in the token, we can add the role to it
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.name = user.name;
+        token.email = user.email;
+        token.role = user.role;
+      }
 
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user) {
+        session.user.id = token.id as string;
+        session.user.name = token.name as string;
+        session.user.email = token.email as string;
+        session.user.role = token.role as string;
+      }
 
-  
+      return session;
+    },
+  },
+  pages: {
+    signIn: "/login",
+    error: "/login",
+  },
 
+  session: {
+    strategy: "jwt",
+    maxAge: 10 * 24 * 60 * 60 * 1000,
+  },
 
-
-
-
+  secret: process.env.AUTH_SECRET,
 });
